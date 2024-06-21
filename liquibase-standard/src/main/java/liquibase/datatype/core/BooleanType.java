@@ -71,8 +71,8 @@ public class BooleanType extends LiquibaseDataType {
             }
         } else if (database instanceof H2Database && getParameters().length > 0) {
             return new DatabaseDataType("BOOLEAN");
-        }//达梦和人大金仓转int
-        else if(database instanceof DmDatabase) {
+        } else if(database instanceof DmDatabase) {
+            //达梦和人大金仓转int
             return new DatabaseDataType("bit");
         }
 

@@ -660,7 +660,7 @@ public class JdbcDatabaseSnapshot extends DatabaseSnapshot {
                     sql = sql + ", DEFAULT_ON_NULL, IDENTITY_COLUMN, ic.GENERATION_TYPE ";
                 }
 
-                sql = sql + "FROM ALL_TAB_COLS c JOIN ALL_COL_COMMENTS cc USING ( OWNER, TABLE_NAME, COLUMN_NAME ) ";
+                sql = sql + "FROM ALL_TAB_COLS c LEFT JOIN ALL_COL_COMMENTS cc USING ( OWNER, TABLE_NAME, COLUMN_NAME ) ";
                 if (collectIdentityData) {
                     sql = sql + "LEFT JOIN ALL_TAB_IDENTITY_COLS ic USING (OWNER, TABLE_NAME, COLUMN_NAME ) ";
                 }
@@ -1356,7 +1356,7 @@ public class JdbcDatabaseSnapshot extends DatabaseSnapshot {
                             "c.COMMENTS as REMARKS, A.tablespace_name as tablespace_name, CASE WHEN A.tablespace_name = " +
                             "(SELECT DEFAULT_TABLESPACE FROM USER_USERS) THEN 'true' ELSE null END as default_tablespace " +
                             "from ALL_TABLES a " +
-                            "join ALL_TAB_COMMENTS c on a.TABLE_NAME=c.table_name and a.owner=c.owner ";// +
+                            "LEFT JOIN ALL_TAB_COMMENTS c on a.TABLE_NAME=c.table_name and a.owner=c.owner ";// +
                             // "left outer join ALL_QUEUE_TABLES q ON a.TABLE_NAME = q.QUEUE_TABLE and a.OWNER = q.OWNER " +
                             //"WHERE q.QUEUE_TABLE is null ";
                     String allCatalogsString = getAllCatalogsStringScratchData();
@@ -1555,7 +1555,7 @@ public class JdbcDatabaseSnapshot extends DatabaseSnapshot {
                         sql = sql + ", EDITIONING_VIEW";
                     }
 
-                    sql = sql + " from ALL_VIEWS a join ALL_TAB_COMMENTS c on a.VIEW_NAME=c.table_name and a.owner=c.owner ";
+                    sql = sql + " from ALL_VIEWS a LEFT JOIN ALL_TAB_COMMENTS c on a.VIEW_NAME=c.table_name and a.owner=c.owner ";
                     if (viewName == null && JdbcDatabaseSnapshot.this.getAllCatalogsStringScratchData() != null) {
                         sql = sql + "WHERE a.OWNER IN ('" + ownerName + "', " + JdbcDatabaseSnapshot.this.getAllCatalogsStringScratchData() + ")";
                     } else {

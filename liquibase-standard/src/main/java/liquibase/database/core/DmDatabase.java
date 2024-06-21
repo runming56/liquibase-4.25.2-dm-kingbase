@@ -112,20 +112,21 @@ public class DmDatabase extends AbstractJdbcDatabase {
         }
     }
 
-    /*@Override
+    @Override
     public void setConnection(DatabaseConnection conn) {
         //noinspection HardCodedStringLiteral,HardCodedStringLiteral,HardCodedStringLiteral,HardCodedStringLiteral,
         // HardCodedStringLiteral
+        //noinspection HardCodedStringLiteral,HardCodedStringLiteral,HardCodedStringLiteral,HardCodedStringLiteral,
+        // HardCodedStringLiteral
         reservedWords.addAll(Arrays.asList("GROUP", "USER", "SESSION", "PASSWORD", "RESOURCE", "START", "SIZE", "UID", "DESC", "ORDER")); //more reserved words not returned by driver
-
         Connection sqlConn = null;
         if (!(conn instanceof OfflineConnection)) {
             try {
-                *//*
+                /*
                  * Don't try to call getWrappedConnection if the conn instance is
                  * is not a JdbcConnection. This happens for OfflineConnection.
                  * see https://liquibase.jira.com/browse/CORE-2192
-                 *//*
+                 */
                 if (conn instanceof JdbcConnection) {
                     sqlConn = ((JdbcConnection) conn).getWrappedConnection();
                 }
@@ -134,8 +135,6 @@ public class DmDatabase extends AbstractJdbcDatabase {
             }
 
             if (sqlConn != null) {
-                tryProxySession(conn.getURL(), sqlConn);
-
                 try {
                     //noinspection HardCodedStringLiteral
                     reservedWords.addAll(Arrays.asList(sqlConn.getMetaData().getSQLKeywords().toUpperCase().split(",\\s*")));
@@ -151,54 +150,12 @@ public class DmDatabase extends AbstractJdbcDatabase {
                 } catch (Exception e) {
                     //noinspection HardCodedStringLiteral
                     Scope.getCurrentScope().getLog(getClass()).info("Could not set remarks reporting on OracleDatabase: " + e.getMessage());
-
                     //cannot set it. That is OK
-                }
-
-                CallableStatement statement = null;
-                try {
-                    //noinspection HardCodedStringLiteral
-                    statement = sqlConn.prepareCall("{call DBMS_UTILITY.DB_VERSION(?,?)}");
-                    statement.registerOutParameter(1, Types.VARCHAR);
-                    statement.registerOutParameter(2, Types.VARCHAR);
-                    statement.execute();
-
-                    String compatibleVersion = statement.getString(2);
-                    if (compatibleVersion != null) {
-                        Matcher majorVersionMatcher = VERSION_PATTERN.matcher(compatibleVersion);
-                        if (majorVersionMatcher.matches()) {
-                            this.databaseMajorVersion = Integer.valueOf(majorVersionMatcher.group(1));
-                            this.databaseMinorVersion = Integer.valueOf(majorVersionMatcher.group(2));
-                        }
-                    }
-                } catch (SQLException e) {
-                    @SuppressWarnings("HardCodedStringLiteral") String message = "Cannot read from DBMS_UTILITY.DB_VERSION: " + e.getMessage();
-
-                    //noinspection HardCodedStringLiteral
-                    Scope.getCurrentScope().getLog(getClass()).info("Could not set check compatibility mode on OracleDatabase, assuming not running in any sort of compatibility mode: " + message);
-                } finally {
-                    JdbcUtil.closeStatement(statement);
-                }
-
-                if (GlobalConfiguration.DDL_LOCK_TIMEOUT.getCurrentValue() != null) {
-                    int timeoutValue = GlobalConfiguration.DDL_LOCK_TIMEOUT.getCurrentValue();
-                    Scope.getCurrentScope().getLog(getClass()).fine("Setting DDL_LOCK_TIMEOUT value to " + timeoutValue);
-                    String sql = "ALTER SESSION SET DDL_LOCK_TIMEOUT=" + timeoutValue;
-                    PreparedStatement ddlLockTimeoutStatement = null;
-                    try {
-                        ddlLockTimeoutStatement = sqlConn.prepareStatement(sql);
-                        ddlLockTimeoutStatement.execute();
-                    } catch (SQLException sqle) {
-                        Scope.getCurrentScope().getUI().sendErrorMessage("Unable to set the DDL_LOCK_TIMEOUT_VALUE: " + sqle.getMessage(), sqle);
-                        Scope.getCurrentScope().getLog(getClass()).warning("Unable to set the DDL_LOCK_TIMEOUT_VALUE: " + sqle.getMessage(), sqle);
-                    } finally {
-                        JdbcUtil.closeStatement(ddlLockTimeoutStatement);
-                    }
                 }
             }
         }
         super.setConnection(conn);
-    }*/
+    }
 
     @Override
     public String getShortName() {
@@ -253,7 +210,16 @@ public class DmDatabase extends AbstractJdbcDatabase {
      */
     @Override
     protected String getAutoIncrementClause(final String generationType, final Boolean defaultOnNull) {
-        return "IDENTITY(1,1)";
+        if (StringUtil.isEmpty(generationType)) {
+            return super.getAutoIncrementClause();
+        }
+
+        String autoIncrementClause = "GENERATED %s AS IDENTITY"; // %s -- [ ALWAYS | BY DEFAULT [ ON NULL ] ]
+        String generationStrategy = generationType;
+        if (Boolean.TRUE.equals(defaultOnNull) && generationType.toUpperCase().equals("BY DEFAULT")) {
+            generationStrategy += " ON NULL";
+        }
+        return String.format(autoIncrementClause, generationStrategy);
     }
 
     @Override
@@ -349,24 +315,37 @@ public class DmDatabase extends AbstractJdbcDatabase {
      * <li>YYYY-MM-DDThh:mm:ss</li>
      * </ul>
      */
-    @Override
     public String getDateLiteral(String isoDate) {
         String normalLiteral = super.getDateLiteral(isoDate);
-
-        if (isDateOnly(isoDate)) {
-            return "TO_DATE(" + normalLiteral + ", 'YYYY-MM-DD')";
-        } else if (isTimeOnly(isoDate)) {
-            return "TO_DATE(" + normalLiteral + ", 'HH24:MI:SS')";
-        } else if (isTimestamp(isoDate)) {
-            return "TO_TIMESTAMP(" + normalLiteral + ", 'YYYY-MM-DD HH24:MI:SS.FF')";
-        } else if (isDateTime(isoDate)) {
-            int seppos = normalLiteral.lastIndexOf('.');
-            if (seppos != -1) {
-                normalLiteral = normalLiteral.substring(0, seppos) + "'";
-            }
-            return "TO_DATE(" + normalLiteral + ", 'YYYY-MM-DD HH24:MI:SS')";
+        StringBuffer val;
+        if (this.isDateOnly(isoDate)) {
+            val = new StringBuffer();
+            val.append("to_date(");
+            val.append(normalLiteral);
+            val.append(", 'YYYY-MM-DD')");
+            return val.toString();
+        } else if (this.isTimeOnly(isoDate)) {
+            val = new StringBuffer();
+            val.append("to_date(");
+            val.append(normalLiteral);
+            val.append(", 'HH24:MI:SS')");
+            return val.toString();
+        } else if (this.isTimestamp(isoDate)) {
+            val = new StringBuffer(26);
+            val.append("to_timestamp(");
+            val.append(normalLiteral);
+            val.append(", 'YYYY-MM-DD HH24:MI:SS.FF')");
+            return val.toString();
+        } else if (this.isDateTime(isoDate)) {
+            normalLiteral = normalLiteral.substring(0, normalLiteral.lastIndexOf(46)) + "'";
+            val = new StringBuffer(26);
+            val.append("to_date(");
+            val.append(normalLiteral);
+            val.append(", 'YYYY-MM-DD HH24:MI:SS')");
+            return val.toString();
+        } else {
+            return "UNSUPPORTED:" + isoDate;
         }
-        return "UNSUPPORTED:" + isoDate;
     }
 
     @Override
